@@ -1,3 +1,4 @@
+# auto-render trigger check (no-op, 2026-09-15)
 #!/usr/bin/env python3
 """Kindle Paperwhite care-dashboard renderer (simple design).
 

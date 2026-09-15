@@ -3,7 +3,7 @@
 Kindle Paperwhite care-dashboard renderer.
 
 Renders the TNKSND care dashboard as a 1236x1648 grayscale PNG optimized
-for e-ink: pure black on pure white, bold high-contrast type, no color,
+for e-ink: pure black on pure white, high-contrast type, no color,
 no thin lines, no alpha.
 
 Layout (portrait 1236x1648):
@@ -36,6 +36,11 @@ W, H = 1236, 1648
 BLACK, WHITE = 0, 255
 BASE = Path(__file__).resolve().parent
 
+# Type scale (M PLUS Rounded 1c, all Regular — no bold anywhere):
+#   380 day / 130 month / 104 weekday / 64 year & calendar title /
+#   52 quote / 48 calendar cells / 40 attribution & verse / 34 footer
+# Latin (Atkinson Hyperlegible Regular): 48 wordmark, 40 verse ref.
+
 # ---------------------------------------------------------------- fonts ---
 
 def _load_first(candidates, size):
@@ -48,12 +53,12 @@ def _load_first(candidates, size):
     raise RuntimeError("no usable font found")
 
 
-def jp_font(size, weight="Bold"):
-    """Japanese-capable font, bold by default for e-ink legibility.
+def jp_font(size, weight="Regular"):
+    """Japanese-capable font, Regular throughout (no bold by design).
 
     M PLUS Rounded 1c (SIL OFL) — friendly rounded gothic, chosen by
     Tetsuro 2026-09-15. Static weights are bundled; SemiBold/Medium map
-    to Bold and Light/Thin map to Regular.
+    to Bold and Light/Thin map to Regular (kept for API compatibility).
     """
     weight_files = {
         "Bold": "MPLUSRounded1c-Bold.ttf",
@@ -158,7 +163,7 @@ def render(target_date=None, now=None):
     d = ImageDraw.Draw(img)
 
     # ---------------------------------------------------------- header ---
-    d.text((MARGIN, 100), "TNKSND", font=latin_font(48), fill=BLACK, anchor="lm")
+    d.text((MARGIN, 100), "TNKSND", font=latin_font(48, bold=False), fill=BLACK, anchor="lm")
     d.line([(MARGIN, 160), (W - MARGIN, 160)], fill=BLACK, width=4)
 
     # ------------------------------------------------- left: big date ---
@@ -174,18 +179,18 @@ def render(target_date=None, now=None):
     # ------------------------------------------------ right: calendar ---
     cx0, cx1 = 700, W - MARGIN          # 700..1180
     d.text(((cx0 + cx1) // 2, 250), f"{year}年 {month}月",
-           font=jp_font(68), fill=BLACK, anchor="mm")
+           font=jp_font(64), fill=BLACK, anchor="mm")
 
     weeks = calendar.Calendar(firstweekday=6).monthdayscalendar(year, month)
     cw, chh = 68, 100
     gx = cx0 + ((cx1 - cx0) - 7 * cw) // 2   # center the 7-col grid
     # weekday header row
-    wdf = jp_font(46)
+    wdf = jp_font(48)
     for c, label in enumerate(WEEKDAYS_JP):
         x = gx + c * cw + cw // 2
         d.text((x, 340), label, font=wdf, fill=BLACK, anchor="mm")
     # day cells
-    nf = jp_font(46)
+    nf = jp_font(48)
     gy = 395
     for r, week in enumerate(weeks):
         for c, dnum in enumerate(week):
@@ -208,7 +213,7 @@ def render(target_date=None, now=None):
     # thick accent bar, pure black (no gray on e-ink)
     d.rectangle([MARGIN, 1130, MARGIN + 18, 1490], fill=BLACK)
 
-    qfont = jp_font(52, weight="SemiBold")
+    qfont = jp_font(52)
     lines = wrap_ja(d, quote, qfont, (W - MARGIN) - 120)
     y = 1155
     for line in lines[:4]:
@@ -216,10 +221,10 @@ def render(target_date=None, now=None):
         y += 76
 
     d.text((W - MARGIN, 1445), "— ヘンリー・ノーウェン",
-           font=jp_font(44), fill=BLACK, anchor="ra")
+           font=jp_font(40, weight="Regular"), fill=BLACK, anchor="ra")
     # verse: English (Atkinson) + Japanese, right-aligned as one block.
     # Drawn left-anchored from a computed start x to avoid anchor/measure drift.
-    vjp, ven = jp_font(40), latin_font(38)
+    vjp, ven = jp_font(40, weight="Regular"), latin_font(40, bold=False)
     en_txt = f"({verse_en})"
     gap = 16
     total_w = ven.getlength(en_txt) + gap + vjp.getlength(verse_jp)

@@ -19,8 +19,8 @@ Usage:
     python3 render.py --serve --port 8000                # HTTP server for the Kindle
 
 Requires: Pillow  (`pip install pillow`)
-Fonts are bundled under ./fonts/ (Noto Sans JP variable + Atkinson
-Hyperlegible, both SIL OFL). System fallbacks are tried if missing.
+Fonts are bundled under ./fonts/ (M PLUS Rounded 1c + Noto Sans JP variable
++ Atkinson Hyperlegible, all SIL OFL). System fallbacks are tried if missing.
 """
 
 import argparse
@@ -49,10 +49,27 @@ def _load_first(candidates, size):
 
 
 def jp_font(size, weight="Bold"):
-    """Japanese-capable font, bold by default for e-ink legibility."""
-    bundled = BASE / "fonts" / "NotoSansJP-VF.ttf"
+    """Japanese-capable font, bold by default for e-ink legibility.
+
+    M PLUS Rounded 1c (SIL OFL) — friendly rounded gothic, chosen by
+    Tetsuro 2026-09-15. Static weights are bundled; SemiBold/Medium map
+    to Bold and Light/Thin map to Regular.
+    """
+    weight_files = {
+        "Bold": "MPLUSRounded1c-Bold.ttf",
+        "SemiBold": "MPLUSRounded1c-Bold.ttf",
+        "Medium": "MPLUSRounded1c-Bold.ttf",
+        "Regular": "MPLUSRounded1c-Regular.ttf",
+        "Light": "MPLUSRounded1c-Regular.ttf",
+        "Thin": "MPLUSRounded1c-Regular.ttf",
+    }
+    bundled = BASE / "fonts" / weight_files.get(weight, "MPLUSRounded1c-Bold.ttf")
     if bundled.exists():
-        f = ImageFont.truetype(str(bundled), size)
+        return ImageFont.truetype(str(bundled), size)
+    # legacy fallback: Noto Sans JP variable (also bundled)
+    legacy = BASE / "fonts" / "NotoSansJP-VF.ttf"
+    if legacy.exists():
+        f = ImageFont.truetype(str(legacy), size)
         try:
             f.set_variation_by_name(weight)
         except Exception:

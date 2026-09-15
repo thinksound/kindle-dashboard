@@ -260,25 +260,23 @@ def render(target_date=None, now=None):
             else:
                 d.text((x, y), str(dnum), font=wf, fill=BLACK, anchor="mm")
 
-    # quote and verse at M, author + reference below at S
+    # verse first, then quote — both at M, attributions at S
     quote, author, verse_text, verse_ref = QUOTES[today.timetuple().tm_yday % len(QUOTES)]
     qf = latin_font(M, bold=False)
-    lines = wrap_en(d, quote, qf, (W - MARGIN) - 120)
-    y = 1120
-    for line in lines[:4]:
-        d.text((120, y), line, font=qf, fill=BLACK, anchor="la")
-        y += 62
-    # meta: author kept tight under the quote, airy gap before the verse
-    y += 20
     mf = latin_font(S, bold=False)
-    d.text((W - MARGIN, y), f"— {author}",
-           font=mf, fill=BLACK, anchor="ra")
-    y += 100
+    y = 1020
     for line in wrap_en(d, f"“{verse_text}”", qf, (W - MARGIN) - 120)[:3]:
         d.text((W - MARGIN, y), line, font=qf, fill=BLACK, anchor="ra")
         y += 58
-    y += 8
+    y += 20
     d.text((W - MARGIN, y), f"— {verse_ref}", font=mf, fill=BLACK, anchor="ra")
+    # airy gap plus one extra line before the quote
+    y += 100 + 62
+    for line in wrap_en(d, quote, qf, (W - MARGIN) - 120)[:4]:
+        d.text((W - MARGIN, y), line, font=qf, fill=BLACK, anchor="ra")
+        y += 62
+    y += 20
+    d.text((W - MARGIN, y), f"— {author}", font=mf, fill=BLACK, anchor="ra")
 
     # footer
     stamp = now.strftime("%-m/%-d %H:%M")

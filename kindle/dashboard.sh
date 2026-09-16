@@ -7,16 +7,22 @@
 #   2. Draws it full-screen on the e-ink panel (fbink preferred, eips fallback).
 #      If the download fails, the last good image is redrawn anyway, so the
 #      screen heals itself instead of staying stuck on the Kindle's own UI.
-#   3. Sleeps 30 minutes, then repeats forever.
+#   3. Checks the repo for a newer version of itself and self-updates,
+#      so script fixes never need USB either.
+#   4. Sleeps 30 minutes, then repeats forever.
 #
 # How to run it: copy this file to the Kindle's "documents" folder over USB,
 # then tap it in the Kindle library (works via the sh_integration scriptlet
 # from KindleModding's "What's Next" guide on a SpiderCat-jailbroken Kindle).
 # Tap ONCE and wait ~15 seconds; a second tap while one loop runs is ignored.
+# After this one-time install, every future update arrives over Wi-Fi.
 #
 # How to stop it: restart the Kindle, or create an empty file called
 # /tmp/stop-dashboard (e.g. from a KUAL terminal: touch /tmp/stop-dashboard).
 # The loop checks for it every minute and exits cleanly.
+
+SCRIPT_VERSION=3              # bump with every script change (repo file
+                              # kindle/dashboard-version.txt must match)
 
 # --- configuration: dashboard PNG mirrors (first valid PNG wins) ---
 # Rendered nightly by GitHub Actions, served over HTTPS.
@@ -29,6 +35,13 @@ GOOD="/mnt/us/dashboard-current.png"  # last known-good image; survives reboot, 
 STOPFILE="/tmp/stop-dashboard"    # create this file to stop the loop
 INTERVAL=1800                     # refresh every 30 minutes (seconds)
 LOCK="/tmp/dashboard.lock"        # single-instance guard (see below)
+
+# Self-update over Wi-Fi (same pattern as board-rotate.sh)
+REPO_RAW="https://raw.githubusercontent.com/thinksound/kindle-dashboard/main/kindle"
+REPO_CDN="https://cdn.jsdelivr.net/gh/thinksound/kindle-dashboard@main/kindle"
+VERSION_FILE="dashboard-version.txt"   # remote: plain version number
+SELF="$0"
+case "$SELF" in /*.sh) ;; *) SELF="";; esac
 
 log() {
     # simple timestamped log line (visible in KUAL terminal / usbnet ssh)
@@ -105,7 +118,52 @@ draw_image() {
 # If the board story rotation is running, stop it (one screen owner at a time).
 touch /tmp/stop-board-rotate
 
-log "starting"
+# Download $1 (path inside kindle/ in the repo) to $2. Tries both mirrors;
+# the destination is only replaced after a successful download.
+fetch_url() {
+    _rel="$1"; _dest="$2"; _tmp="$_dest.tmp"
+    for _base in "$REPO_RAW" "$REPO_CDN"; do
+        if curl -sfSL -m 60 -o "$_tmp" "$_base/$_rel" 2>/dev/null; then
+            mv "$_tmp" "$_dest"
+            return 0
+        fi
+        rm -f "$_tmp"
+    done
+    return 1
+}
+
+# If the repo carries a newer script version, download it, validate it,
+# install it over ourselves, and restart into it.
+self_update() {
+    if [ -z "$SELF" ]; then
+        log "self-update skipped (unknown script path)"
+        return 1
+    fi
+    _ver="/tmp/dashboard-version.txt"
+    fetch_url "$VERSION_FILE" "$_ver" || {
+        log "version check failed (offline?), skipping update"
+        return 1
+    }
+    _remote=$(tr -cd '0-9' < "$_ver" 2>/dev/null | head -c 8)
+    if [ -n "$_remote" ] && [ "$_remote" -gt "$SCRIPT_VERSION" ] 2>/dev/null; then
+        log "updating script v$SCRIPT_VERSION -> v$_remote"
+        _new="$SELF.new"
+        if fetch_url "dashboard.sh" "$_new" \
+           && [ "$(head -c 9 "$_new" 2>/dev/null)" = "#!/bin/sh" ] \
+           && sh -n "$_new" 2>/dev/null; then
+            mv "$_new" "$SELF"
+            chmod +x "$SELF"
+            log "update installed, restarting into new version"
+            exec "$SELF"
+        else
+            log "downloaded script failed validation, keeping v$SCRIPT_VERSION"
+            rm -f "$_new"
+        fi
+    fi
+    return 0
+}
+
+log "starting v$SCRIPT_VERSION"
 
 while :; do
     # --- stop check (top of every loop) ---
@@ -114,6 +172,8 @@ while :; do
         log "stop file found, exiting"
         exit 0
     fi
+
+    self_update   # may restart into a newer version (never returns then)
 
     # --- fetch the freshly rendered PNG (first valid mirror wins) ---
     OK=0

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Board story rotation for Kindle Paperwhite. (v2: Wi-Fi sync, no USB needed)
+# Board story rotation for Kindle Paperwhite. (v3: up to 10 images, Wi-Fi sync)
 #
 # What this does, step by step:
 #   1. Syncs story images (PNG/JPG) from the kindle-dashboard GitHub repo
@@ -9,6 +9,7 @@
 #      looping forever: clock -> schedule -> family message -> encouragement.
 #   3. Re-syncs every ~30 minutes, so new images appear on their own.
 #   4. Checks the repo for a newer version of itself and self-updates.
+# Note: rotates up to MAX_IMAGES images from the repo manifest.
 #
 # How to run it (one time): copy this file into the Kindle's "documents"
 # folder over USB, then tap it once in the Kindle library (sh_integration
@@ -23,8 +24,9 @@
 # How to stop it: restart the Kindle, or create an empty file called
 # /tmp/stop-board-rotate. The loop checks for it every few seconds.
 
-SCRIPT_VERSION=2                # bump with every script change (repo file
+SCRIPT_VERSION=3           # bump with every script change (repo file
                                 # kindle/board-version.txt must match)
+MAX_IMAGES=10               # rotate at most this many images from the manifest
 IMGDIR="/mnt/us/board"          # story images live here (USB-visible)
 INTERVAL=60                     # seconds shown per image
 RESCAN_EVERY=30                 # re-sync + re-scan every N images (~30 min)
@@ -127,23 +129,29 @@ valid_image() {
 }
 
 sync_images() {
-    # Downloads every image named in the repo's board/list.txt.
-    # A failed download keeps the previous file; only validated
-    # images replace what's on screen.
+    # Downloads up to MAX_IMAGES images named in the repo's
+    # board/list.txt (first lines win). A failed download keeps the
+    # previous file; only validated images replace what's on screen.
     mkdir -p "$IMGDIR"
     _list="/tmp/board-list.txt"
+    _keep="/tmp/board-keep.txt"
+    : > "$_keep"
     fetch_url "$LIST_FILE" "$_list" || {
         log "image list fetch failed, keeping local images"
         return 1
     }
+    _count=0
     while IFS= read -r _name || [ -n "$_name" ]; do
+        [ "$_count" -ge "$MAX_IMAGES" ] && break
         [ -f "$STOPFILE" ] && return 1
         case "$_name" in ""|\#*) continue ;; esac
         _name=$(basename "$_name")          # no subdirectories, ever
+        _count=$((_count + 1))
         _tmp="$IMGDIR/$_name.tmp"
         if fetch_url "board/$_name" "$_tmp"; then
             if valid_image "$_tmp"; then
                 mv "$_tmp" "$IMGDIR/$_name"
+                echo "$_name" >> "$_keep"
                 log "synced image $_name"
             else
                 log "downloaded $_name failed validation, kept old file"
@@ -153,6 +161,19 @@ sync_images() {
             log "could not fetch image $_name, kept old file"
         fi
     done < "$_list"
+    # Drop local images no longer in the manifest (e.g. a removed slot),
+    # but only when the sync actually produced a keep-list.
+    if [ -s "$_keep" ]; then
+        for _f in "$IMGDIR"/*.png "$IMGDIR"/*.PNG \
+                 "$IMGDIR"/*.jpg "$IMGDIR"/*.JPG "$IMGDIR"/*.jpeg; do
+            [ -e "$_f" ] || continue
+            _b=$(basename "$_f")
+            if ! grep -qx "$_b" "$_keep" 2>/dev/null; then
+                rm -f "$_f"
+                log "removed stale image $_b"
+            fi
+        done
+    fi
     return 0
 }
 
